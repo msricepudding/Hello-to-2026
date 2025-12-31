@@ -60,3 +60,194 @@
     <script>
         let scene, camera, renderer, coreLight, heartGroup, stars;
         let photos = [];
+        let isExploded = false;
+        let mouseX = 0, mouseY = 0;
+        const photoCount = 21;
+
+        // 随机文案库
+        const wishList = [
+            "Happy 2026",
+            "一起吃好喝好赚钱钱",
+            "爱你三千遍",
+            "2026一统江山，挥斥方遒",
+            "身体健康，能吃能睡！"
+        ];
+
+        // --- 打字机逻辑 ---
+        const textToType = "Kiss a goodbye to 2025 and may we all have a magnificent 2026";
+        function runTypewriter() {
+            const container = document.getElementById('typewriter-text');
+            let i = 0;
+            function type() {
+                if (i < textToType.length) {
+                    container.innerHTML += textToType.charAt(i);
+                    i++;
+                    setTimeout(type, 5000 / textToType.length);
+                } else {
+                    setTimeout(() => {
+                        document.getElementById('overlay').style.opacity = 0;
+                        document.getElementById('overlay').style.transition = "opacity 1s";
+                        setTimeout(() => {
+                            document.getElementById('overlay').style.display = 'none';
+                            initThreeScene();
+                            startMediaPipe();
+                        }, 1000);
+                    }, 1000);
+                }
+            }
+            type();
+        }
+
+        // --- 3D 场景 ---
+        function initThreeScene() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000008, 0.012);
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 60;
+
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('main-canvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+            coreLight = new THREE.PointLight(0xFFD700, 45, 160);
+            scene.add(coreLight);
+
+            createStarField();
+            createHeartAlbum();
+            animate();
+        }
+
+        function createStarField() {
+            const starGeo = new THREE.BufferGeometry();
+            const positions = [];
+            for(let i=0; i<8000; i++) positions.push((Math.random()-0.5)*300, (Math.random()-0.5)*300, (Math.random()-0.5)*300);
+            starGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.15, transparent: true, blending: THREE.AdditiveBlending }));
+            scene.add(stars);
+        }
+
+        function createHeartAlbum() {
+            heartGroup = new THREE.Group();
+            scene.add(heartGroup);
+            const frameMat = new THREE.MeshStandardMaterial({ color: 0xFFB6C1, metalness: 1.0, roughness: 0.05, emissive: 0xE0A39A, emissiveIntensity: 0.9 });
+            const textureLoader = new THREE.TextureLoader();
+            let loadedFiles = 0;
+
+            for(let i=0; i < photoCount; i++) {
+                const group = new THREE.Group();
+                const photoMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+                const photoMesh = new THREE.Mesh(new THREE.PlaneGeometry(4, 5.3), photoMat);
+                const frameMesh = new THREE.Mesh(new THREE.BoxGeometry(4.3, 5.6, 0.15), frameMat);
+                frameMesh.position.z = -0.1;
+                group.add(photoMesh, frameMesh);
+
+                const t = (i / (photoCount - 1)) * Math.PI * 2;
+                const x = 16 * Math.pow(Math.sin(t), 3);
+                const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                group.position.set(x * 1.5, y * 1.5, (Math.random()-0.5)*10);
+                group.userData = { homePos: group.position.clone(), targetPos: new THREE.Vector3(), rotSpeed: new THREE.Vector3((Math.random()-0.5)*0.03, (Math.random()-0.5)*0.03, (Math.random()-0.5)*0.03) };
+
+                textureLoader.load(`images/photo_${i}.jpg`, (tex) => {
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    photoMat.map = tex;
+                    photoMat.needsUpdate = true;
+                    loadedFiles++;
+                    document.getElementById('loading-bar').style.width = (loadedFiles/photoCount*100) + '%';
+                    if(loadedFiles === photoCount) setTimeout(() => document.getElementById('loading-bar').style.display='none', 500);
+                });
+                photos.push(group);
+                heartGroup.add(group);
+            }
+        }
+
+        function triggerExplode() {
+            if(isExploded) return;
+            isExploded = true;
+            document.getElementById('wish-popup').classList.remove('show'); // 爆炸时即刻隐藏
+            photos.forEach(p => {
+                const dist = 35 + Math.random() * 45;
+                const phi = Math.random() * Math.PI * 2, theta = Math.random() * Math.PI;
+                p.userData.targetPos.set(dist * Math.sin(theta) * Math.cos(phi), dist * Math.sin(theta) * Math.sin(phi), Math.random() * 35);
+            });
+        }
+
+        function triggerAssemble() {
+            if(!isExploded) return;
+            isExploded = false;
+            
+            // 核心修改：重聚时随机选一个文案
+            const randomWish = wishList[Math.floor(Math.random() * wishList.length)];
+            const popup = document.getElementById('wish-popup');
+            popup.innerText = randomWish;
+
+            setTimeout(() => {
+                if(!isExploded) popup.classList.add('show');
+            }, 1500);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = Date.now() * 0.001;
+            const s = 1 + Math.sin(time * 3.5) * 0.04;
+            heartGroup.scale.set(s, s, s);
+            coreLight.intensity = 40 + Math.sin(time * 6) * 20;
+
+            if(stars) {
+                stars.rotation.y += 0.0003;
+                stars.material.opacity = 0.5 + Math.sin(time * 2) * 0.4;
+            }
+
+            photos.forEach(p => {
+                const target = isExploded ? p.userData.targetPos : p.userData.homePos;
+                p.position.lerp(target, 0.06);
+                if(isExploded) {
+                    p.rotation.x += p.userData.rotSpeed.x;
+                    p.rotation.y += p.userData.rotSpeed.y;
+                    p.scale.lerp(new THREE.Vector3(1.6, 1.6, 1.6), 0.05);
+                } else {
+                    p.rotation.set(0, 0, 0);
+                    p.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+                }
+            });
+
+            camera.position.x += (mouseX - camera.position.x) * 0.05;
+            camera.position.y += (-mouseY - camera.position.y) * 0.05;
+            camera.lookAt(0,0,0);
+            renderer.render(scene, camera);
+        }
+
+        // --- MediaPipe ---
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.75 });
+        hands.onResults(res => {
+            if(res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+                const lm = res.multiHandLandmarks[0];
+                mouseX = (lm[9].x - 0.5) * 85;
+                mouseY = (lm[9].y - 0.5) * 85;
+                const dist = Math.abs(lm[8].y - lm[0].y);
+                if(dist > 0.5) triggerExplode(); 
+                else if(dist < 0.25) triggerAssemble();
+            }
+        });
+
+        function startMediaPipe() {
+            const cam = new Camera(document.getElementById('video'), {
+                onFrame: async () => { await hands.send({image: document.getElementById('video')}); },
+                width: 640, height: 480
+            });
+            cam.start();
+        }
+
+        document.getElementById('startBtn').onclick = () => {
+            document.getElementById('startBtn').style.display = 'none';
+            runTypewriter();
+        };
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
